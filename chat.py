@@ -30,7 +30,10 @@ def main():
     print("\nChat is ready! Type 'quit' to exit.\n")
 
     messages = [
-        {"role": "system", "content": "You are a helpful, friendly assistant. Give clear and concise answers."},
+        {
+            "role": "system",
+            "content": "You are a helpful, friendly assistant. Give clear and concise answers.",
+        },
     ]
 
     while True:

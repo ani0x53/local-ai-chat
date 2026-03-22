@@ -724,10 +724,10 @@ btnNewChat.addEventListener('click', createChat);
 async function loadModels() {
   try {
     const resp = await fetch('/api/models');
-    const models = await resp.json();
-    if (models.length > 0) {
-      modelSelect.innerHTML = models.map(m =>
-        `<option value="${m}" ${m.startsWith('llama3.1') ? 'selected' : ''}>${m}</option>`
+    const data = await resp.json();
+    if (data.models.length > 0) {
+      modelSelect.innerHTML = data.models.map(m =>
+        `<option value="${m}" ${m === data.default ? 'selected' : ''}>${m}</option>`
       ).join('');
     }
   } catch (e) {

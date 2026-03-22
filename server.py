@@ -28,17 +28,21 @@ DB_PATH = Path(__file__).parent / "chats.db"
 # Database helpers
 # ---------------------------------------------------------------------------
 
+
 async def init_db():
     async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute("""
+        await db.execute(
+            """
             CREATE TABLE IF NOT EXISTS chats (
                 id TEXT PRIMARY KEY,
                 title TEXT NOT NULL,
                 created_at REAL NOT NULL,
                 updated_at REAL NOT NULL
             )
-        """)
-        await db.execute("""
+        """
+        )
+        await db.execute(
+            """
             CREATE TABLE IF NOT EXISTS messages (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 chat_id TEXT NOT NULL REFERENCES chats(id) ON DELETE CASCADE,
@@ -46,8 +50,11 @@ async def init_db():
                 content TEXT NOT NULL,
                 created_at REAL NOT NULL
             )
-        """)
-        await db.execute("CREATE INDEX IF NOT EXISTS idx_messages_chat ON messages(chat_id)")
+        """
+        )
+        await db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_messages_chat ON messages(chat_id)"
+        )
         await db.execute("PRAGMA foreign_keys = ON")
         await db.commit()
 
@@ -63,10 +70,12 @@ async def get_db():
 # App
 # ---------------------------------------------------------------------------
 
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await init_db()
     yield
+
 
 app = FastAPI(lifespan=lifespan)
 
@@ -83,6 +92,7 @@ async def index():
 # ---------------------------------------------------------------------------
 # REST endpoints
 # ---------------------------------------------------------------------------
+
 
 @app.get("/api/chats")
 async def list_chats():
@@ -108,7 +118,9 @@ async def create_chat():
                 "SELECT id FROM chats ORDER BY updated_at ASC LIMIT 1"
             )
             if oldest:
-                await db.execute("DELETE FROM messages WHERE chat_id = ?", (oldest[0]["id"],))
+                await db.execute(
+                    "DELETE FROM messages WHERE chat_id = ?", (oldest[0]["id"],)
+                )
                 await db.execute("DELETE FROM chats WHERE id = ?", (oldest[0]["id"],))
 
         chat_id = uuid.uuid4().hex[:12]
@@ -118,7 +130,12 @@ async def create_chat():
             (chat_id, "New chat", now, now),
         )
         await db.commit()
-        return {"id": chat_id, "title": "New chat", "created_at": now, "updated_at": now}
+        return {
+            "id": chat_id,
+            "title": "New chat",
+            "created_at": now,
+            "updated_at": now,
+        }
     finally:
         await db.close()
 
@@ -169,14 +186,16 @@ async def list_models():
         async with aiohttp.ClientSession() as session:
             async with session.get(f"{OLLAMA_BASE}/api/tags") as resp:
                 data = await resp.json()
-                return [m["name"] for m in data.get("models", [])]
+                names = [m["name"] for m in data.get("models", [])]
+                return {"models": names, "default": DEFAULT_MODEL}
     except Exception:
-        return []
+        return {"models": [], "default": DEFAULT_MODEL}
 
 
 # ---------------------------------------------------------------------------
 # WebSocket — streaming chat
 # ---------------------------------------------------------------------------
+
 
 @app.websocket("/ws/chat/{chat_id}")
 async def chat_ws(websocket: WebSocket, chat_id: str):
@@ -208,7 +227,12 @@ async def chat_ws(websocket: WebSocket, chat_id: str):
                 "SELECT role, content FROM messages WHERE chat_id = ? ORDER BY created_at",
                 (chat_id,),
             )
-            messages = [{"role": "system", "content": "You are a helpful, friendly assistant. Give clear and concise answers. Use markdown formatting when appropriate."}]
+            messages = [
+                {
+                    "role": "system",
+                    "content": "You are a helpful, friendly assistant. Give clear and concise answers. Use markdown formatting when appropriate.",
+                }
+            ]
             messages += [{"role": r["role"], "content": r["content"]} for r in rows]
 
             await db.close()
@@ -234,10 +258,14 @@ async def chat_ws(websocket: WebSocket, chat_id: str):
                     ) as resp:
                         if resp.status != 200:
                             error_text = await resp.text()
-                            await websocket.send_text(json.dumps({
-                                "type": "error",
-                                "content": f"Ollama error: {error_text}"
-                            }))
+                            await websocket.send_text(
+                                json.dumps(
+                                    {
+                                        "type": "error",
+                                        "content": f"Ollama error: {error_text}",
+                                    }
+                                )
+                            )
                             continue
 
                         async for line in resp.content:
@@ -251,20 +279,28 @@ async def chat_ws(websocket: WebSocket, chat_id: str):
                             token = chunk.get("message", {}).get("content", "")
                             if token:
                                 full_response += token
-                                await websocket.send_text(json.dumps({
-                                    "type": "token",
-                                    "content": token,
-                                }))
+                                await websocket.send_text(
+                                    json.dumps(
+                                        {
+                                            "type": "token",
+                                            "content": token,
+                                        }
+                                    )
+                                )
 
                             if chunk.get("done"):
                                 await websocket.send_text(json.dumps({"type": "done"}))
                                 break
 
             except aiohttp.ClientError as e:
-                await websocket.send_text(json.dumps({
-                    "type": "error",
-                    "content": f"Cannot reach Ollama at {OLLAMA_BASE}. Is it running?\n\nError: {e}"
-                }))
+                await websocket.send_text(
+                    json.dumps(
+                        {
+                            "type": "error",
+                            "content": f"Cannot reach Ollama at {OLLAMA_BASE}. Is it running?\n\nError: {e}",
+                        }
+                    )
+                )
                 continue
 
             # Save assistant response
@@ -286,4 +322,5 @@ async def chat_ws(websocket: WebSocket, chat_id: str):
 # ---------------------------------------------------------------------------
 if __name__ == "__main__":
     import uvicorn
+
     uvicorn.run("server:app", host="0.0.0.0", port=8000, reload=True)
