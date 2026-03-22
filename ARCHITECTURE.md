@@ -171,3 +171,190 @@ Phone browser ──HTTPS──► ngrok edge server ──tunnel──► local
 | FastAPI over Flask | Native async, WebSocket support, auto-docs at `/docs` |
 | 10 chat limit | Prevents unbounded storage growth on a local machine |
 | No auth | Single-user local app — auth would add complexity with no benefit |
+
+---
+
+## Scaling Roadmap
+
+### Phase 1: Current — Single User (1-5 users)
+
+What we have today. Everything on one machine.
+
+```
+┌──────────────────────────────────┐
+│           Single Machine         │
+│                                  │
+│  Browser ──► FastAPI ──► Ollama  │
+│                 │                │
+│              SQLite              │
+└──────────────────────────────────┘
+```
+
+**Bottleneck**: GPU can only run one inference at a time.
+
+---
+
+### Phase 2: Multi-User — 100 Users
+
+Add a request queue, swap SQLite for Postgres, add auth, and run multiple inference workers behind a load balancer.
+
+```
+                    ┌──────────┐
+                    │  Users   │
+                    │ (phones, │
+                    │ browsers)│
+                    └────┬─────┘
+                         │
+                    ┌────▼─────┐
+                    │ Nginx /  │
+                    │ Caddy    │ ◄── TLS termination, rate limiting
+                    │ (reverse │
+                    │  proxy)  │
+                    └────┬─────┘
+                         │
+              ┌──────────┼──────────┐
+              │          │          │
+         ┌────▼──┐  ┌────▼──┐  ┌────▼──┐
+         │FastAPI│  │FastAPI│  │FastAPI│  ◄── 2-3 app server replicas
+         │  #1   │  │  #2   │  │  #3   │      (stateless, behind LB)
+         └───┬───┘  └───┬───┘  └───┬───┘
+             │          │          │
+             └──────────┼──────────┘
+                   │         │
+            ┌──────▼──┐ ┌────▼──────┐
+            │  Redis  │ │ Postgres  │
+            │ (queue +│ │ (users,   │
+            │  cache) │ │  chats,   │
+            └────┬────┘ │  messages)│
+                 │      └───────────┘
+        ┌────────┼────────┐
+        │        │        │
+   ┌────▼──┐ ┌──▼────┐ ┌─▼─────┐
+   │Ollama │ │Ollama │ │Ollama │  ◄── GPU workers (1 per GPU)
+   │ GPU 1 │ │ GPU 2 │ │ GPU 3 │
+   └───────┘ └───────┘ └───────┘
+```
+
+**Key changes from Phase 1:**
+
+| Component | Phase 1 | Phase 2 |
+|-----------|---------|---------|
+| Reverse proxy | None | Nginx/Caddy with TLS |
+| App servers | 1 process | 2-3 stateless replicas |
+| Database | SQLite | PostgreSQL |
+| Queue | None | Redis (inference job queue) |
+| Inference | 1 Ollama | 2-3 Ollama workers (1 per GPU) |
+| Auth | None | JWT tokens + user accounts |
+| Deployment | `./start.sh` | Docker Compose |
+
+**Why Redis?** Inference is slow (seconds). You need a queue to:
+- Accept messages instantly, process them FIFO
+- Prevent GPU overload when 10 users send messages at once
+- Enable retry on failure
+
+**Estimated hardware**: 1 server with 2-3 GPUs (e.g., 3x RTX 4090), or 3 separate GPU machines. ~$500-1500/mo on cloud.
+
+---
+
+### Phase 3: Production Scale — 10 Million Users
+
+At this scale, you're building infrastructure, not an app. The architecture shifts to microservices, managed cloud, and purpose-built inference engines.
+
+```
+                         ┌──────────────┐
+                         │   10M Users  │
+                         └──────┬───────┘
+                                │
+                         ┌──────▼───────┐
+                         │  CloudFlare  │ ◄── Global CDN, DDoS protection,
+                         │  / AWS CF    │     static asset caching
+                         └──────┬───────┘
+                                │
+                    ┌───────────┼───────────┐
+                    │           │           │
+              ┌─────▼──┐ ┌─────▼──┐ ┌─────▼──┐
+              │  API    │ │  API   │ │  API   │ ◄── Regional API clusters
+              │ Gateway │ │ Gateway│ │ Gateway│     (US, EU, Asia)
+              │ (Kong)  │ │        │ │        │
+              └────┬────┘ └────┬───┘ └────┬───┘
+                   │           │          │
+         ┌─────────────────────────────────────┐
+         │          Kubernetes Cluster          │
+         │                                      │
+         │  ┌───────────┐    ┌───────────────┐  │
+         │  │ Chat      │    │ Auth Service  │  │
+         │  │ Service   │    │ (OAuth, JWT)  │  │
+         │  │ (FastAPI) │    └───────────────┘  │
+         │  │ 20+ pods  │                       │
+         │  └─────┬─────┘    ┌───────────────┐  │
+         │        │          │ User Service  │  │
+         │        │          │ (profiles,    │  │
+         │        │          │  billing)     │  │
+         │        │          └───────────────┘  │
+         └────────┼─────────────────────────────┘
+                  │
+       ┌──────────┼──────────────┐
+       │          │              │
+  ┌────▼───┐ ┌───▼─────┐  ┌─────▼──────┐
+  │ Kafka  │ │Postgres │  │   Redis     │
+  │ (event │ │ Cluster │  │  Cluster    │
+  │ stream)│ │ (RDS)   │  │(ElastiCache)│
+  └───┬────┘ └─────────┘  └────────────┘
+      │
+      │  ┌─────────────────────────────────────────┐
+      │  │       GPU Inference Fleet                │
+      │  │                                          │
+      │  │  ┌─────────┐ ┌─────────┐ ┌─────────┐   │
+      └──►  │  vLLM   │ │  vLLM   │ │  vLLM   │   │
+         │  │  Node 1  │ │  Node 2 │ │  Node N │   │ ◄── Auto-scaling GPU pool
+         │  │ (8xA100) │ │ (8xA100)│ │(8xA100) │   │     Continuous batching
+         │  └─────────┘ └─────────┘ └─────────┘   │     PagedAttention
+         │                                          │
+         │  ┌─────────────────────────────────┐     │
+         │  │  Model Registry (S3 + cache)    │     │
+         │  │  Multiple model versions/sizes  │     │
+         │  └─────────────────────────────────┘     │
+         └──────────────────────────────────────────┘
+```
+
+**Key changes from Phase 2:**
+
+| Concern | Phase 2 | Phase 3 |
+|---------|---------|---------|
+| Inference engine | Ollama (llama.cpp) | vLLM with continuous batching & PagedAttention |
+| Scaling | Manual | Kubernetes auto-scaling (pods + GPU nodes) |
+| Queue | Redis | Kafka (event streaming, replay, audit) |
+| Database | Single Postgres | Postgres cluster (read replicas, sharding) |
+| CDN | None | CloudFlare / CloudFront for static + edge caching |
+| Auth | JWT | OAuth2 + SSO + billing integration |
+| Regions | Single | Multi-region (latency-sensitive) |
+| GPU fleet | 2-3 GPUs | 50-200+ GPUs, auto-scaling by queue depth |
+| Monitoring | Logs | Prometheus, Grafana, distributed tracing |
+| Cost | ~$1K/mo | ~$200K-$1M+/mo (GPU-dominated) |
+
+**Why vLLM over Ollama at scale?**
+- **Continuous batching**: processes multiple user requests in a single GPU pass (10-50x throughput vs sequential)
+- **PagedAttention**: efficient memory management, fits more concurrent contexts per GPU
+- **Tensor parallelism**: splits large models across multiple GPUs on one node
+
+**The real bottleneck at 10M users is cost.** Each inference takes ~1-5 seconds on a GPU. At 10M users doing ~10 messages/day, that's ~100M inferences/day. You need hundreds of GPUs running 24/7, which is why every company at this scale either:
+1. Uses heavily quantized / smaller models to maximize throughput
+2. Implements aggressive caching (common questions, system prompts)
+3. Charges $20/mo per user (sound familiar?)
+
+---
+
+### Migration Path Summary
+
+```
+Phase 1 (Now)          Phase 2 (100 users)       Phase 3 (10M users)
+─────────────          ───────────────────        ───────────────────
+./start.sh        ──►  docker compose up    ──►   helm install
+SQLite            ──►  PostgreSQL           ──►   Postgres cluster + sharding
+Ollama            ──►  Ollama x3 + Redis    ──►   vLLM fleet + Kafka
+No auth           ──►  JWT + user accounts  ──►   OAuth2 + SSO + billing
+Single file HTML  ──►  React/Next.js SPA    ──►   React + CDN edge cache
+localhost         ──►  Nginx + TLS          ──►   CloudFlare + API Gateway
+1 machine         ──►  1 server + 3 GPUs    ──►   Kubernetes multi-region
+$0/mo             ──►  $500-1500/mo         ──►   $200K-1M+/mo
+```

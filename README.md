@@ -51,14 +51,22 @@ The start script handles everything automatically:
 
 ### 3. Access from your phone (optional)
 
-Install [ngrok](https://ngrok.com/) to get a public URL you can open on your phone:
+Install [ngrok](https://ngrok.com/) and set up a free account:
 
 ```bash
+# 1. Install ngrok
 brew install ngrok    # Mac
 # or: snap install ngrok   # Linux
+
+# 2. Create a free account at https://dashboard.ngrok.com/signup
+
+# 3. Copy your authtoken from https://dashboard.ngrok.com/get-started/your-authtoken
+
+# 4. Add your authtoken (one-time setup)
+ngrok config add-authtoken YOUR_TOKEN_HERE
 ```
 
-The start script will automatically create a tunnel and print the URL. Open it on your phone and start chatting.
+After that, the start script will automatically create a tunnel and print a public URL. Open it on your phone and start chatting.
 
 ## Recommended Models
 
