@@ -1,0 +1,6 @@
+.venv/
+chats.db
+__pycache__/
+*.pyc
+/tmp/
+.DS_Store

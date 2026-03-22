@@ -1,48 +1,117 @@
-# Local ChatGPT-like Chatbot
+# Local AI Chat
 
-A simple Python script that downloads a HuggingFace language model and lets you chat with it locally — no API keys, no cloud, everything runs on your machine.
+A private ChatGPT-like app that runs entirely on your computer. No API keys, no subscriptions, no data leaving your machine.
 
-## How It Works
+![dark themed chat UI](https://img.shields.io/badge/UI-ChatGPT--style-blue) ![runs locally](https://img.shields.io/badge/runs-100%25%20local-green) ![mobile friendly](https://img.shields.io/badge/mobile-friendly-orange)
 
-- Downloads [TinyLlama-1.1B-Chat](https://huggingface.co/TinyLlama/TinyLlama-1.1B-Chat-v1.0), a lightweight instruction-tuned chat model (1.1B parameters, ~2GB download)
-- Uses HuggingFace's `transformers` pipeline with the standard chat message format
-- Automatically uses Apple Silicon GPU (MPS) if available, otherwise falls back to CPU
-- Maintains conversation history so the model remembers context within a session
+## Features
 
-## Setup
+- **Fully private** — your conversations never leave your computer
+- **ChatGPT-like UI** — dark theme, streaming responses, markdown rendering
+- **Mobile friendly** — open on your phone with ngrok (optional)
+- **Chat history** — up to 10 conversations, persisted across restarts
+- **Model switcher** — use any model available through Ollama
+- **Streaming** — responses appear token-by-token in real time
+- **Zero cost** — no API keys or subscriptions needed
+
+## Quick Start
+
+### 1. Install Ollama
+
+Ollama runs AI models locally, optimized for your hardware.
+
+**Mac:**
+```bash
+brew install ollama
+```
+
+**Linux:**
+```bash
+curl -fsSL https://ollama.com/install.sh | sh
+```
+
+Or download from [ollama.com/download](https://ollama.com/download)
+
+### 2. Clone and run
 
 ```bash
-pip install -r requirements.txt
+git clone https://github.com/ani0x53/local-ai-chat.git
+cd local-ai-chat
+./start.sh
 ```
 
-## Usage
+That's it. Open **http://localhost:8000** in your browser.
+
+The start script handles everything automatically:
+- Starts Ollama if it's not running
+- Downloads the default model (`llama3.1:8b`) on first run
+- Creates a Python virtual environment
+- Installs dependencies
+- Launches the chat server
+
+### 3. Access from your phone (optional)
+
+Install [ngrok](https://ngrok.com/) to get a public URL you can open on your phone:
 
 ```bash
-python chat.py
+brew install ngrok    # Mac
+# or: snap install ngrok   # Linux
 ```
 
-Type your messages at the `You:` prompt. Type `quit` or `exit` to stop.
+The start script will automatically create a tunnel and print the URL. Open it on your phone and start chatting.
 
+## Recommended Models
+
+The default model is `llama3.1:8b` — a great balance of speed and quality. You can switch models from the sidebar dropdown, or pull new ones:
+
+| Model | Size | RAM Needed | Best For |
+|-------|------|-----------|----------|
+| `llama3.1:8b` | 4.7 GB | 8 GB | **Default** — fast and smart |
+| `qwen2.5:14b` | 9 GB | 16 GB | Higher quality conversations |
+| `mistral-small` | 14 GB | 24 GB | Strong reasoning |
+| `qwen2.5:32b` | 20 GB | 32 GB | Excellent quality |
+| `llama3.3:70b` | 43 GB | 64 GB | Best quality (slower) |
+
+To pull a new model:
+```bash
+ollama pull qwen2.5:14b
 ```
-You: What is Python?
-Assistant: Python is a high-level programming language known for its simple syntax...
 
-You: What are some common uses?
-Assistant: Python is commonly used for web development, data science...
-```
-
-## Using a Different Model
-
-Change `MODEL_NAME` in `chat.py` to swap models:
-
-| Model | Size | RAM Needed | Quality |
-|-------|------|------------|---------|
-| `TinyLlama/TinyLlama-1.1B-Chat-v1.0` (default) | 1.1B | ~4GB | Basic |
-| `microsoft/Phi-3-mini-4k-instruct` | 3.8B | ~8GB | Good |
-| `mistralai/Mistral-7B-Instruct-v0.3` | 7B | ~14GB | Great |
+It will appear in the model dropdown automatically.
 
 ## Requirements
 
-- Python 3.9+
-- ~2GB disk space for the default model (cached in `~/.cache/huggingface`)
-- macOS with Apple Silicon recommended (uses GPU via MPS)
+- **Python 3.10+**
+- **Ollama** ([install](https://ollama.com/download))
+- **8 GB+ RAM** (16 GB+ recommended)
+- **Node.js** (only if you want ngrok phone access)
+
+## Project Structure
+
+```
+├── start.sh          # One-command launcher
+├── server.py         # FastAPI backend + WebSocket streaming
+├── frontend/
+│   └── index.html    # Chat UI (single file)
+├── requirements.txt  # Python dependencies
+└── chats.db          # SQLite database (created on first run)
+```
+
+## Manual Setup
+
+If you prefer to run things manually:
+
+```bash
+# Terminal 1: Start Ollama
+ollama serve
+
+# Terminal 2: Start the chat
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+python server.py
+```
+
+## License
+
+MIT
